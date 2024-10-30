@@ -1,3 +1,3 @@
-set(COMPONENT_SRCS "power_save.c" "wifi.c")
+set(COMPONENT_SRCS "pomodoro.cpp" "wifi.cpp")
 
 register_component()
