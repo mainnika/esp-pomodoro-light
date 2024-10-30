@@ -1,0 +1,8 @@
+
+build/
+
+.venv
+
+sdkconfig.old
+
+sdkconfig
