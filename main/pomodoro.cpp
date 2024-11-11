@@ -3,6 +3,8 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -10,14 +12,13 @@
 #include "esp_wifi.h"
 #include "esp_sleep.h"
 #include "esp_timer.h"
+#include "gpio.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
 #include "tinyfsm.hpp"
 
 static const char *TAG = "pomodoro";
-
-static void periodic_timer_callback(void *arg);
 
 #if CONFIG_WIFI_POWER_SAVE_MIN_MODEM
 #define DEFAULT_PS_MODE WIFI_PS_MIN_MODEM
@@ -28,6 +29,8 @@ static void periodic_timer_callback(void *arg);
 #else
 #define DEFAULT_PS_MODE WIFI_PS_NONE
 #endif /*CONFIG_POWER_SAVE_MODEM*/
+
+#define ESP_INTR_FLAG_DEFAULT 0
 
 esp_err_t wifi_connect(void);
 
@@ -63,6 +66,9 @@ struct TimerComplete : tinyfsm::Event
 struct ResetTimer : tinyfsm::Event
 {
 };
+struct TimerAction : tinyfsm::Event
+{
+};
 
 struct Pomodoro : tinyfsm::Fsm<Pomodoro>
 {
@@ -71,6 +77,7 @@ struct Pomodoro : tinyfsm::Fsm<Pomodoro>
     virtual void react(ResetTimer const &) = 0;
     virtual void react(TimerReady const &) {};
     virtual void react(CheckTimer const &) {};
+    virtual void react(TimerAction const &) {};
 
     virtual void entry(void)
     {
@@ -109,7 +116,10 @@ struct Off : Pomodoro
         Pomodoro::entry();
         ESP_LOGI(TAG, "starting timer");
     };
-    void react(ResetTimer const &) override {};
+    void react(ResetTimer const &) override
+    {
+        ESP_LOGI(TAG, "timer not ready");
+    };
 
     void react(TimerReady const &) override { transit<Idle>(); };
 };
@@ -122,7 +132,7 @@ struct Idle : Pomodoro
         Pomodoro::entry();
         ESP_LOGI(TAG, "timer is ready, idle");
     };
-    void react(ResetTimer const &) override { transit<Idle>(); };
+    void react(ResetTimer const &) override { transit<Work>(); };
 
     void react(StartTimer const &) override { transit<Work>(); };
 };
@@ -203,16 +213,22 @@ struct LongBreak : Pomodoro
 };
 
 FSM_INITIAL_STATE(Pomodoro, Off)
-
 using fsm_handle = Pomodoro;
 
-esp_timer_handle_t periodic_timer;
-TimerReady timer_ready_event;
-CheckTimer check_timer_event;
-StartTimer start_timer_event;
-ResetTimer reset_timer_event;
+static esp_timer_handle_t periodic_timer;
+static TimerReady timer_ready_event;
+static CheckTimer check_timer_event;
+static StartTimer start_timer_event;
+static ResetTimer reset_timer_event;
 
-esp_err_t start_timer()
+static QueueHandle_t gpio_evt_queue = nullptr;
+
+static void periodic_timer_callback(void *arg);
+static void IRAM_ATTR gpio_isr_handler(void *arg);
+static void gpio_handle_evt_from_isr(void *arg);
+static void led_visualize(int64_t time_since_boot);
+
+static esp_err_t start_timer()
 {
     fsm_handle::dispatch(timer_ready_event);
     fsm_handle::dispatch(start_timer_event);
@@ -225,9 +241,133 @@ esp_err_t start_timer()
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
 
     /* Start the timers */
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 1000000));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 500000));
 
     return ESP_OK;
+}
+
+static void periodic_timer_callback(void *arg)
+{
+    int64_t time_since_boot = esp_timer_get_time();
+    ESP_LOGI(TAG, "Periodic timer called, time since boot: %" PRIu64 " us", time_since_boot);
+
+    check_timer_event.time_since_boot = time_since_boot;
+    fsm_handle::dispatch(check_timer_event);
+
+    led_visualize(time_since_boot);
+}
+
+static esp_err_t gpio_setup()
+{
+    gpio_config_t io_conf;
+
+    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1 << GPIO_NUM_2);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1 << GPIO_NUM_14) | (1 << GPIO_NUM_12) | (1 << GPIO_NUM_13);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+
+    // change gpio intrrupt type for one pin
+    gpio_set_intr_type(GPIO_NUM_2, GPIO_INTR_ANYEDGE);
+
+    // create a queue to handle gpio event from isr
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    // start gpio task
+    xTaskCreate(gpio_handle_evt_from_isr, "gpio_handle_evt_from_isr", 2048, nullptr, 10, nullptr);
+
+    // install gpio isr service
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    // hook isr handler for specific gpio pin
+    gpio_isr_handler_add(GPIO_NUM_2, gpio_isr_handler, (void *)(GPIO_NUM_2));
+
+    return ESP_OK;
+}
+
+static void IRAM_ATTR gpio_isr_handler(void *arg)
+{
+    uint32_t gpio_num = (uint32_t)arg;
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, nullptr);
+}
+
+static void gpio_handle_evt_from_isr(void *arg)
+{
+    uint32_t gpio_num;
+    for (;;)
+    {
+        if (xQueueReceive(gpio_evt_queue, &gpio_num, portMAX_DELAY))
+        {
+            ESP_LOGI(TAG, "GPIO[%" PRIu32 "] evt received", gpio_num);
+            switch (gpio_num)
+            {
+            case GPIO_NUM_2:
+                fsm_handle::dispatch(reset_timer_event);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+}
+
+static void led_visualize(int64_t time_since_boot)
+{
+    enum led_state
+    {
+        OFF,
+        IDLE,
+        WORK,
+        SHORT_BREAK,
+        LONG_BREAK
+    };
+    led_state state = OFF;
+    state = fsm_handle::is_in_state<Off>() ? OFF : state;
+    state = fsm_handle::is_in_state<Idle>() ? IDLE : state;
+    state = fsm_handle::is_in_state<Work>() ? WORK : state;
+    state = fsm_handle::is_in_state<ShortBreak>() ? SHORT_BREAK : state;
+    state = fsm_handle::is_in_state<LongBreak>() ? LONG_BREAK : state;
+
+    int64_t seconds_since_boot = time_since_boot / 1000000;
+    bool is_even = seconds_since_boot % 2 == 0;
+    uint32_t led_on = 0;
+    uint32_t led_off = 1;
+    uint32_t led_blink = is_even ? led_on : led_off;
+
+    switch (state)
+    {
+    case OFF:
+        gpio_set_level(GPIO_NUM_13, led_off);
+        gpio_set_level(GPIO_NUM_12, led_blink);
+        gpio_set_level(GPIO_NUM_14, led_off);
+        break;
+    case IDLE:
+        gpio_set_level(GPIO_NUM_13, led_blink);
+        gpio_set_level(GPIO_NUM_12, led_off);
+        gpio_set_level(GPIO_NUM_14, led_off);
+        break;
+    case WORK:
+        gpio_set_level(GPIO_NUM_13, led_on);
+        gpio_set_level(GPIO_NUM_12, led_off);
+        gpio_set_level(GPIO_NUM_14, led_off);
+        break;
+    case SHORT_BREAK:
+        gpio_set_level(GPIO_NUM_13, led_off);
+        gpio_set_level(GPIO_NUM_12, led_blink);
+        gpio_set_level(GPIO_NUM_14, led_on);
+        break;
+    case LONG_BREAK:
+        gpio_set_level(GPIO_NUM_13, led_off);
+        gpio_set_level(GPIO_NUM_12, led_off);
+        gpio_set_level(GPIO_NUM_14, led_on);
+        break;
+    }
 }
 
 void app_main(void)
@@ -240,6 +380,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(wifi_connect());
     ESP_ERROR_CHECK(start_timer());
+    ESP_ERROR_CHECK(gpio_setup());
 
     esp_wifi_set_ps(DEFAULT_PS_MODE);
 
@@ -251,13 +392,4 @@ void app_main(void)
         .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 #endif // CONFIG_PM_ENABLE
-}
-
-static void periodic_timer_callback(void *arg)
-{
-    int64_t time_since_boot = esp_timer_get_time();
-    ESP_LOGI(TAG, "Periodic timer called, time since boot: %" PRIu64 " us", time_since_boot);
-
-    check_timer_event.time_since_boot = time_since_boot;
-    fsm_handle::dispatch(check_timer_event);
 }
