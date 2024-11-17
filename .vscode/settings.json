@@ -1,12 +1,15 @@
 {
     "cmake.environment": {
-        "IDF_PATH": "/Users/mainnika/Develop/ESP8266_RTOS_SDK",
-        "IDF_TOOLS_EXPORT_CMD": "/Users/mainnika/Develop/ESP8266_RTOS_SDK/export.sh",
-        "IDF_TOOLS_INSTALL_CMD": "/Users/mainnika/Develop/ESP8266_RTOS_SDK/install.sh",
-        "PATH": "/home/mainnika/.vscode/extensions/ms-python.python-2024.16.1-linux-x64/python_files/deactivate/zsh:/home/mainnika/.local/share/virtualenvs/ESP8266_RTOS_SDK-ZXQSE8WK/bin:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/home/mainnika/.vscode/extensions/ms-python.python-2024.16.1-linux-x64/python_files/deactivate/zsh:/home/mainnika/.local/share/virtualenvs/ESP8266_RTOS_SDK-ZXQSE8WK/bin:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/bin:/home/mainnika/.espressif/tools/xtensa-lx106-elf/esp-2020r3-49-gd5524c1-8.4.0/xtensa-lx106-elf/bin:/Users/mainnika/Develop/ESP8266_RTOS_SDK/tools:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
+        "IDF_PATH": "${userHome}/Develop/ESP8266_RTOS_SDK",
+        "IDF_PYTHON_ENV_PATH": "/home/mainnika/.espressif/python_env/rtos3.4_py3.9_env",
+        "IDF_TOOLS_EXPORT_CMD": "${userHome}/Develop/ESP8266_RTOS_SDK/export.sh",
+        "IDF_TOOLS_INSTALL_CMD": "${userHome}/Develop/ESP8266_RTOS_SDK/install.sh",
+        "PATH": "${userHome}/Develop/ESP8266_RTOS_SDK/components/esptool_py/esptool:${userHome}/Develop/ESP8266_RTOS_SDK/components/partition_table/:${userHome}/.espressif/tools/xtensa-lx106-elf/esp-2020r3-49-gd5524c1-8.4.0/xtensa-lx106-elf/bin:${userHome}/.espressif/python_env/rtos3.4_py3.9_env/bin:${userHome}/Develop/ESP8266_RTOS_SDK/tools:${workspaceFolder}/.venv/bin:${userHome}/bin:${userHome}/go/bin:/usr/local/bin:${userHome}/bin:${userHome}/go/bin:/usr/local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/usr/local/bin",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "POETRY_ACTIVE": "1"
     },
     "cmake.additionalCompilerSearchDirs": [
-        "/home/mainnika/.espressif/tools/xtensa-lx106-elf/esp-2020r3-49-gd5524c1-8.4.0/xtensa-lx106-elf/bin"
+        "${userHome}/.espressif/tools/xtensa-lx106-elf/esp-2020r3-49-gd5524c1-8.4.0/xtensa-lx106-elf/bin"
     ],
     "files.associations": {
         "protocol_examples_common.h": "c",
@@ -14,10 +17,5 @@
         "*.tcc": "c",
         "cstdlib": "c"
     },
-    "terminal.integrated.env.linux": {
-        "IDF_PATH": "/Users/mainnika/Develop/ESP8266_RTOS_SDK",
-        "IDF_TOOLS_EXPORT_CMD": "/Users/mainnika/Develop/ESP8266_RTOS_SDK/export.sh",
-        "IDF_TOOLS_INSTALL_CMD": "/Users/mainnika/Develop/ESP8266_RTOS_SDK/install.sh",
-        "PATH": "/home/mainnika/.vscode/extensions/ms-python.python-2024.16.1-linux-x64/python_files/deactivate/zsh:/home/mainnika/.local/share/virtualenvs/ESP8266_RTOS_SDK-ZXQSE8WK/bin:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/home/mainnika/.vscode/extensions/ms-python.python-2024.16.1-linux-x64/python_files/deactivate/zsh:/home/mainnika/.local/share/virtualenvs/ESP8266_RTOS_SDK-ZXQSE8WK/bin:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/bin:/home/mainnika/.espressif/tools/xtensa-lx106-elf/esp-2020r3-49-gd5524c1-8.4.0/xtensa-lx106-elf/bin:/Users/mainnika/Develop/ESP8266_RTOS_SDK/tools:/home/mainnika/bin:/home/mainnika/go/bin:/usr/local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
-    }
+    "terminal.integrated.env.linux": {}
 }
