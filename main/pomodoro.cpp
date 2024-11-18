@@ -115,6 +115,75 @@ protected:
     bool timer_active;
 
 public:
+    void start_counting()
+    {
+        if (this->timer_active)
+        {
+            return;
+        }
+        if (this->pause_started_at > 0)
+        {
+            int64_t time_since_boot = esp_timer_get_time();
+
+            this->counting_started_at += time_since_boot - this->pause_started_at;
+            this->pause_started_at = 0;
+            this->timer_active = true;
+
+            ESP_LOGI(TAG, "pomodoro timer resumed counting at %" PRIu64 " sec", time_since_boot / 1000000);
+            return;
+        }
+
+        int64_t time_since_boot = esp_timer_get_time();
+
+        this->counting_started_at = time_since_boot;
+        this->pause_started_at = 0;
+        this->timer_active = true;
+
+        ESP_LOGI(TAG, "pomodoro timer started counting at %" PRIu64 " sec", time_since_boot / 1000000);
+        return;
+    };
+
+    void pause_counting()
+    {
+        if (!this->timer_active)
+        {
+            ESP_LOGI(TAG, "pomodoro timer cannot pause, not counting");
+            return;
+        }
+
+        int64_t time_since_boot = esp_timer_get_time();
+
+        this->timer_active = false;
+        this->pause_started_at = time_since_boot;
+
+        ESP_LOGI(TAG, "pomodoro timer paused counting at %" PRIu64 " sec", this->get_counting_seconds());
+    };
+
+    void reset_counting()
+    {
+        this->counting_started_at = 0;
+        this->pause_started_at = 0;
+        this->timer_active = false;
+
+        ESP_LOGI(TAG, "pomodoro timer reset");
+    };
+
+    int64_t get_counting_seconds()
+    {
+        if (this->pause_started_at > 0)
+        {
+            return (this->pause_started_at - this->counting_started_at) / 1000000;
+        }
+        if (this->counting_started_at > 0)
+        {
+            int64_t time_since_boot = esp_timer_get_time();
+            int64_t elapsed_time_in_seconds = time_since_boot - this->counting_started_at;
+            return elapsed_time_in_seconds / 1000000;
+        }
+
+        return 0;
+    };
+
     bool is_timer_active()
     {
         return this->timer_active;
