@@ -73,6 +73,10 @@ struct TimerAction : tinyfsm::Event
 
 struct Pomodoro : tinyfsm::Fsm<Pomodoro>
 {
+    static constexpr int64_t WORK_PERIOD_SECONDS = 45 * 60;
+    static constexpr int64_t SHORT_BREAK_PERIOD_SECONDS = 15 * 60;
+    static constexpr int64_t LONG_BREAK_PERIOD_SECONDS = 30 * 60;
+
     virtual void react(StartTimer const &) {};
     virtual void react(TimerComplete const &) {};
     virtual void react(ResetTimer const &) = 0;
@@ -85,26 +89,22 @@ struct Pomodoro : tinyfsm::Fsm<Pomodoro>
         int64_t time_since_boot = esp_timer_get_time();
         ESP_LOGI(TAG, "Pomodoro timer started at %" PRIu64 " us", time_since_boot);
 
-        Pomodoro::state_entry_time = time_since_boot;
+        Pomodoro::counting_started_at = time_since_boot;
     }; /* entry actions in some states */
     void exit(void) {}; /* no exit actions */
 
 protected:
     static size_t short_breaks;
     static size_t long_breaks;
-    static int64_t state_entry_time;
-
-    static constexpr int64_t WORK_PERIOD = 1 * 60 * 1000000;    // 1 minute
-    static constexpr int64_t SHORT_BREAK_PERIOD = 10 * 1000000; // 10 seconds
-    static constexpr int64_t LONG_BREAK_PERIOD = 30 * 1000000;  // 30 seconds
+    static int64_t counting_started_at;
 };
 
 size_t Pomodoro::short_breaks = 0;
 size_t Pomodoro::long_breaks = 0;
-int64_t Pomodoro::state_entry_time = 0;
-constexpr int64_t Pomodoro::WORK_PERIOD;
-constexpr int64_t Pomodoro::SHORT_BREAK_PERIOD;
-constexpr int64_t Pomodoro::LONG_BREAK_PERIOD;
+int64_t Pomodoro::counting_started_at = 0;
+constexpr int64_t Pomodoro::WORK_PERIOD_SECONDS;
+constexpr int64_t Pomodoro::SHORT_BREAK_PERIOD_SECONDS;
+constexpr int64_t Pomodoro::LONG_BREAK_PERIOD_SECONDS;
 
 // ----------------------------------------------------------------------------
 // 3. State Declarations
@@ -150,9 +150,9 @@ struct Work : Pomodoro
     void react(CheckTimer const &check_timer_event) override
     {
         int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (time_since_boot - Pomodoro::state_entry_time < Pomodoro::WORK_PERIOD)
+        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::WORK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "work time left: %" PRIu64 "", Pomodoro::WORK_PERIOD - (time_since_boot - Pomodoro::state_entry_time));
+            ESP_LOGI(TAG, "work time left: %" PRIu64 "", Pomodoro::WORK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at));
             return;
         }
 
@@ -180,9 +180,9 @@ struct ShortBreak : Pomodoro
     void react(CheckTimer const &check_timer_event) override
     {
         int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (time_since_boot - Pomodoro::state_entry_time < Pomodoro::SHORT_BREAK_PERIOD)
+        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::SHORT_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "short break time left: %" PRIu64 "", Pomodoro::SHORT_BREAK_PERIOD - (time_since_boot - Pomodoro::state_entry_time));
+            ESP_LOGI(TAG, "short break time left: %" PRIu64 "", Pomodoro::SHORT_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
             return;
         }
 
@@ -203,9 +203,9 @@ struct LongBreak : Pomodoro
     void react(CheckTimer const &check_timer_event) override
     {
         int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (time_since_boot - Pomodoro::state_entry_time < Pomodoro::LONG_BREAK_PERIOD)
+        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD - (time_since_boot - Pomodoro::state_entry_time));
+            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
             return;
         }
 
@@ -224,16 +224,15 @@ struct LongBreakLastMinutes : Pomodoro
     void react(CheckTimer const &) override
     {
         int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (time_since_boot - Pomodoro::state_entry_time < Pomodoro::LONG_BREAK_PERIOD)
+        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD - (time_since_boot - Pomodoro::state_entry_time));
+            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
             return;
         }
 
         transit<Work>();
     };
 };
-
 
 FSM_INITIAL_STATE(Pomodoro, Off)
 using fsm_handle = Pomodoro;
