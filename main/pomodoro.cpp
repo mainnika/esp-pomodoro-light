@@ -63,7 +63,6 @@ struct StartTimer : tinyfsm::Event
 // Triggered to check the timer.
 struct CheckTimer : tinyfsm::Event
 {
-    int64_t time_since_boot;
 };
 // Triggered when the timer finishes counting down.
 struct TimerComplete : tinyfsm::Event
@@ -98,16 +97,11 @@ struct Pomodoro : tinyfsm::Fsm<Pomodoro>
     virtual void react(CheckTimer const &) {};
     virtual void react(TimerAction const &) {};
 
-    virtual void entry(void)
-    {
-        int64_t time_since_boot = esp_timer_get_time();
-        ESP_LOGI(TAG, "Pomodoro timer started at %" PRIu64 " us", time_since_boot);
+    virtual void entry(void) {};
 
-        Pomodoro::counting_started_at = time_since_boot;
-    }; /* entry actions in some states */
-    void exit(void) {}; /* no exit actions */
+    void exit(void) {};
 
-protected:
+private:
     size_t short_breaks;
     size_t long_breaks;
     int64_t counting_started_at;
@@ -194,6 +188,11 @@ public:
         return this->pause_started_at > 0;
     };
 
+    bool is_started()
+    {
+        return this->counting_started_at > 0;
+    };
+
     void add_short_break()
     {
         this->short_breaks++;
@@ -233,15 +232,20 @@ struct Off : Pomodoro
 {
     void entry() override
     {
-        Pomodoro::entry();
         ESP_LOGI(TAG, "starting timer");
     };
     void react(ResetTimer const &) override
     {
         ESP_LOGI(TAG, "timer not ready");
     };
+    void react(TimerReady const &) override
+    {
+        ESP_LOGI(TAG, "got timer ready event");
 
-    void react(TimerReady const &) override { transit<Idle>(); };
+        return transit<Idle>();
+    };
+
+public:
 };
 
 // The initial state where the timer is ready to start.
@@ -249,34 +253,37 @@ struct Idle : Pomodoro
 {
     void entry() override
     {
-        Pomodoro::entry();
+        this->reset_counting();
         ESP_LOGI(TAG, "timer is ready, idle");
     };
-    void react(ResetTimer const &) override { transit<Work>(); };
+    void react(ResetTimer const &) override { return transit<Work>(); };
 
-    void react(StartTimer const &) override { transit<Work>(); };
+    void react(StartTimer const &) override { return transit<Work>(); };
+
+    void react(TimerAction const &) override { return transit<Work>(); };
 };
+
 // The state where the timer is counting down the work period.
 struct Work : Pomodoro
 {
     void entry() override
     {
-        Pomodoro::entry();
-        ESP_LOGI(TAG, "timer is counting");
+        this->reset_counting();
+        ESP_LOGI(TAG, "let's get to work");
     };
-    void react(ResetTimer const &) override { transit<Idle>(); };
+    void react(ResetTimer const &) override { return transit<Idle>(); };
 
-    void react(CheckTimer const &check_timer_event) override
+    void react(CheckTimer const &) override
     {
         if (!this->is_timer_active())
         {
             return;
         }
 
-        int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::WORK_PERIOD_SECONDS)
+        int64_t elapsed_time_in_seconds = this->get_counting_seconds();
+        if (elapsed_time_in_seconds < Pomodoro::WORK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "work time left: %" PRIu64 "", Pomodoro::WORK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at));
+            ESP_LOGI(TAG, "work time left: %" PRIu64 " sec", Pomodoro::WORK_PERIOD_SECONDS - elapsed_time_in_seconds);
             return;
         }
 
@@ -290,29 +297,57 @@ struct Work : Pomodoro
             transit<ShortBreak>();
         }
     };
+
+    void react(TimerAction const &) override
+    {
+        if (!this->is_started())
+        {
+            this->start_counting();
+            return;
+        }
+
+        if (this->is_paused())
+        {
+            this->start_counting();
+            return;
+        }
+
+        this->pause_counting();
+    };
 };
 // The state where the timer is counting down a short break period.
 struct ShortBreak : Pomodoro
 {
     void entry() override
     {
-        Pomodoro::entry();
+        this->reset_counting();
         this->add_short_break();
-        ESP_LOGI(TAG, "short break %d", this->short_breaks);
+        ESP_LOGI(TAG, "short break, amount left: %" PRIu32 "", this->get_short_breaks_left());
     };
     void react(ResetTimer const &) override { transit<Idle>(); };
 
-    void react(CheckTimer const &check_timer_event) override
+    void react(CheckTimer const &) override
     {
         if (!this->is_timer_active())
         {
             return;
         }
 
-        int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::SHORT_BREAK_PERIOD_SECONDS)
+        int64_t elapsed_time_in_seconds = this->get_counting_seconds();
+        if (elapsed_time_in_seconds < Pomodoro::SHORT_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "short break time left: %" PRIu64 "", Pomodoro::SHORT_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
+            ESP_LOGI(TAG, "short break time left: %" PRIu64 " sec", Pomodoro::SHORT_BREAK_PERIOD_SECONDS - elapsed_time_in_seconds);
+            return;
+        }
+
+        transit<Work>();
+    };
+
+    void react(TimerAction const &) override
+    {
+        if (!this->is_started())
+        {
+            this->start_counting();
             return;
         }
 
@@ -324,27 +359,38 @@ struct LongBreak : Pomodoro
 {
     void entry() override
     {
-        Pomodoro::entry();
+        this->reset_counting();
         this->add_long_break();
-        ESP_LOGI(TAG, "long break");
+        ESP_LOGI(TAG, "long break, amount taken: %" PRIu32 "", this->get_long_breaks());
     };
     void react(ResetTimer const &) override { transit<Idle>(); };
 
-    void react(CheckTimer const &check_timer_event) override
+    void react(CheckTimer const &) override
     {
         if (!this->is_timer_active())
         {
             return;
         }
 
-        int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
+        int64_t elapsed_time_in_seconds = this->get_counting_seconds();
+        if (elapsed_time_in_seconds < Pomodoro::LONG_BREAK_PERIOD_SECONDS - Pomodoro::SHORT_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
+            ESP_LOGI(TAG, "long break time left: %" PRIu64 " sec", Pomodoro::LONG_BREAK_PERIOD_SECONDS - elapsed_time_in_seconds);
             return;
         }
 
         transit<LongBreakLastMinutes>();
+    };
+
+    void react(TimerAction const &) override
+    {
+        if (!this->is_started())
+        {
+            this->start_counting();
+            return;
+        }
+
+        transit<Work>();
     };
 };
 // The state where the timer is counting down last minutes of the long break period.
@@ -363,10 +409,21 @@ struct LongBreakLastMinutes : Pomodoro
             return;
         }
 
-        int64_t time_since_boot = check_timer_event.time_since_boot;
-        if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
+        int64_t elapsed_time_in_seconds = this->get_counting_seconds();
+        if (elapsed_time_in_seconds < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
         {
-            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD_SECONDS - (time_since_boot - Pomodoro::counting_started_at) / 1000000);
+            ESP_LOGI(TAG, "long break time left, it's last minutes: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD_SECONDS - elapsed_time_in_seconds);
+            return;
+        }
+
+        transit<Work>();
+    };
+
+    void react(TimerAction const &) override
+    {
+        if (!this->is_started())
+        {
+            this->start_counting();
             return;
         }
 
@@ -406,9 +463,8 @@ static esp_err_t start_timer()
 static void periodic_timer_callback(void *arg)
 {
     int64_t time_since_boot = esp_timer_get_time();
-    ESP_LOGI(TAG, "Periodic timer called, time since boot: %" PRIu64 " us", time_since_boot);
+    ESP_LOGI(TAG, "periodic timer called, time since boot: %" PRIu64 " sec", time_since_boot / 1000000);
 
-    check_timer_event.time_since_boot = time_since_boot;
     fsm_handle::dispatch(check_timer_event);
 
     led_visualize(time_since_boot);
@@ -475,7 +531,7 @@ static void gpio_handle_evt_from_isr(void *arg)
             switch (gpio_num)
             {
             case GPIO_ACTION_BUTTON:
-                fsm_handle::dispatch(reset_timer_event);
+                fsm_handle::dispatch(timer_action_event);
                 break;
             default:
                 break;
@@ -492,13 +548,18 @@ static void led_visualize(int64_t time_since_boot)
         IDLE,
         WORK,
         SHORT_BREAK,
-        LONG_BREAK
+        LONG_BREAK,
+        LONG_BREAK_LAST_MINUTES,
     };
     led_state state = OFF;
     state = fsm_handle::is_in_state<Idle>() ? IDLE : state;
     state = fsm_handle::is_in_state<Work>() ? WORK : state;
     state = fsm_handle::is_in_state<ShortBreak>() ? SHORT_BREAK : state;
     state = fsm_handle::is_in_state<LongBreak>() ? LONG_BREAK : state;
+    state = fsm_handle::is_in_state<LongBreakLastMinutes>() ? LONG_BREAK_LAST_MINUTES : state;
+
+    bool is_paused = Pomodoro::current_state_ptr->is_paused();
+    bool is_started = Pomodoro::current_state_ptr->is_started();
 
     int64_t seconds_since_boot = time_since_boot / 1000000;
     bool is_even = seconds_since_boot % 2 == 0;
@@ -509,30 +570,71 @@ static void led_visualize(int64_t time_since_boot)
     switch (state)
     {
     case OFF:
-        gpio_set_level(GPIO_NUM_13, led_off);
-        gpio_set_level(GPIO_LIGHT_YELLOW, led_blink);
-        gpio_set_level(GPIO_LIGHT_RED, led_off);
-        break;
+        gpio_set_level(GPIO_LIGHT_RED, led_on);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_on);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_on);
+        return;
     case IDLE:
-        gpio_set_level(GPIO_NUM_13, led_blink);
-        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
         gpio_set_level(GPIO_LIGHT_RED, led_off);
-        break;
-    case WORK:
-        gpio_set_level(GPIO_NUM_13, led_on);
-        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
-        gpio_set_level(GPIO_LIGHT_RED, led_off);
-        break;
-    case SHORT_BREAK:
-        gpio_set_level(GPIO_NUM_13, led_off);
         gpio_set_level(GPIO_LIGHT_YELLOW, led_blink);
-        gpio_set_level(GPIO_LIGHT_RED, led_on);
-        break;
-    case LONG_BREAK:
-        gpio_set_level(GPIO_NUM_13, led_off);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+        return;
+    case WORK:
+        if (!is_started)
+        {
+            gpio_set_level(GPIO_LIGHT_RED, led_on);
+            gpio_set_level(GPIO_LIGHT_YELLOW, led_on);
+            gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+            return;
+        }
+        if (is_paused)
+        {
+            gpio_set_level(GPIO_LIGHT_RED, led_off);
+            gpio_set_level(GPIO_LIGHT_YELLOW, led_blink);
+            gpio_set_level(GPIO_LIGHT_GREEN, led_on);
+            return;
+        }
+        gpio_set_level(GPIO_LIGHT_RED, led_off);
         gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_on);
+        return;
+
+    case SHORT_BREAK:
+        if (!is_started)
+        {
+            gpio_set_level(GPIO_LIGHT_RED, led_off);
+            gpio_set_level(GPIO_LIGHT_YELLOW, led_on);
+            gpio_set_level(GPIO_LIGHT_GREEN, led_on);
+            return;
+        }
+        gpio_set_level(GPIO_LIGHT_RED, led_blink);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+        return;
+    case LONG_BREAK:
+        if (!is_started)
+        {
+            gpio_set_level(GPIO_LIGHT_RED, led_off);
+            gpio_set_level(GPIO_LIGHT_YELLOW, led_on);
+            gpio_set_level(GPIO_LIGHT_GREEN, led_on);
+            return;
+        }
         gpio_set_level(GPIO_LIGHT_RED, led_on);
-        break;
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+        return;
+    case LONG_BREAK_LAST_MINUTES:
+        if (!is_started)
+        {
+            gpio_set_level(GPIO_LIGHT_RED, led_blink);
+            gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+            gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+            return;
+        }
+        gpio_set_level(GPIO_LIGHT_RED, led_blink);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_GREEN, led_off);
+        return;
     }
 }
 
