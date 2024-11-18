@@ -457,10 +457,20 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 static void gpio_handle_evt_from_isr(void *arg)
 {
     uint32_t gpio_num;
+    static int64_t last_isr_time = 0;
+    const int64_t debounce_time = 200000; // 200 ms debounce time
+
     for (;;)
     {
         if (xQueueReceive(gpio_evt_queue, &gpio_num, portMAX_DELAY))
         {
+            int64_t current_time = esp_timer_get_time();
+            if (current_time - last_isr_time < debounce_time)
+            {
+                continue; // Ignore the event if it's within the debounce time
+            }
+            last_isr_time = current_time;
+
             ESP_LOGI(TAG, "GPIO[%" PRIu32 "] evt received", gpio_num);
             switch (gpio_num)
             {
