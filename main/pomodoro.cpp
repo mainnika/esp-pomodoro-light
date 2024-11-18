@@ -71,6 +71,13 @@ struct TimerAction : tinyfsm::Event
 {
 };
 
+static TimerReady timer_ready_event;
+static StartTimer start_timer_event;
+static CheckTimer check_timer_event;
+static TimerComplete timer_complete_event;
+static ResetTimer reset_timer_event;
+static TimerAction timer_action_event;
+
 struct Pomodoro : tinyfsm::Fsm<Pomodoro>
 {
     static constexpr int64_t WORK_PERIOD_SECONDS = 45 * 60;
@@ -266,11 +273,6 @@ FSM_INITIAL_STATE(Pomodoro, Off)
 using fsm_handle = Pomodoro;
 
 static esp_timer_handle_t periodic_timer;
-static TimerReady timer_ready_event;
-static CheckTimer check_timer_event;
-static StartTimer start_timer_event;
-static ResetTimer reset_timer_event;
-
 static QueueHandle_t gpio_evt_queue = nullptr;
 
 static void periodic_timer_callback(void *arg);
