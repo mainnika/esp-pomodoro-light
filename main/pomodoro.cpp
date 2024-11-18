@@ -111,8 +111,14 @@ protected:
     static size_t short_breaks;
     static size_t long_breaks;
     static int64_t counting_started_at;
+    bool timer_active;
 
 public:
+    bool is_timer_active()
+    {
+        return this->timer_active;
+    };
+
     void add_short_break()
     {
         this->short_breaks++;
@@ -190,6 +196,11 @@ struct Work : Pomodoro
 
     void react(CheckTimer const &check_timer_event) override
     {
+        if (!this->is_timer_active())
+        {
+            return;
+        }
+
         int64_t time_since_boot = check_timer_event.time_since_boot;
         if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::WORK_PERIOD_SECONDS)
         {
@@ -220,6 +231,11 @@ struct ShortBreak : Pomodoro
 
     void react(CheckTimer const &check_timer_event) override
     {
+        if (!this->is_timer_active())
+        {
+            return;
+        }
+
         int64_t time_since_boot = check_timer_event.time_since_boot;
         if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::SHORT_BREAK_PERIOD_SECONDS)
         {
@@ -243,6 +259,11 @@ struct LongBreak : Pomodoro
 
     void react(CheckTimer const &check_timer_event) override
     {
+        if (!this->is_timer_active())
+        {
+            return;
+        }
+
         int64_t time_since_boot = check_timer_event.time_since_boot;
         if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
         {
@@ -264,6 +285,11 @@ struct LongBreakLastMinutes : Pomodoro
 
     void react(CheckTimer const &) override
     {
+        if (!this->is_timer_active())
+        {
+            return;
+        }
+
         int64_t time_since_boot = check_timer_event.time_since_boot;
         if (((time_since_boot - Pomodoro::counting_started_at) / 1000000) < Pomodoro::LONG_BREAK_PERIOD_SECONDS)
         {
