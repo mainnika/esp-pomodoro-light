@@ -44,6 +44,7 @@ struct Idle;
 struct Work;
 struct ShortBreak;
 struct LongBreak;
+struct LongBreakLastMinutes;
 
 // Triggered when the timer is ready to start.
 struct TimerReady : tinyfsm::Event
@@ -208,9 +209,31 @@ struct LongBreak : Pomodoro
             return;
         }
 
+        transit<LongBreakLastMinutes>();
+    };
+};
+// The state where the timer is counting down last minutes of the long break period.
+struct LongBreakLastMinutes : Pomodoro
+{
+    void entry() override
+    {
+        ESP_LOGI(TAG, "long break last minutes");
+    };
+    void react(ResetTimer const &) override { transit<Idle>(); };
+
+    void react(CheckTimer const &) override
+    {
+        int64_t time_since_boot = check_timer_event.time_since_boot;
+        if (time_since_boot - Pomodoro::state_entry_time < Pomodoro::LONG_BREAK_PERIOD)
+        {
+            ESP_LOGI(TAG, "long break time left: %" PRIu64 "", Pomodoro::LONG_BREAK_PERIOD - (time_since_boot - Pomodoro::state_entry_time));
+            return;
+        }
+
         transit<Work>();
     };
 };
+
 
 FSM_INITIAL_STATE(Pomodoro, Off)
 using fsm_handle = Pomodoro;
