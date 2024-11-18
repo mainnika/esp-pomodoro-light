@@ -76,6 +76,7 @@ struct Pomodoro : tinyfsm::Fsm<Pomodoro>
     static constexpr int64_t WORK_PERIOD_SECONDS = 45 * 60;
     static constexpr int64_t SHORT_BREAK_PERIOD_SECONDS = 15 * 60;
     static constexpr int64_t LONG_BREAK_PERIOD_SECONDS = 30 * 60;
+    static constexpr int64_t LONG_BREAK_AFTER = 4;
 
     virtual void react(StartTimer const &) {};
     virtual void react(TimerComplete const &) {};
@@ -97,6 +98,32 @@ protected:
     static size_t short_breaks;
     static size_t long_breaks;
     static int64_t counting_started_at;
+
+public:
+    void add_short_break()
+    {
+        this->short_breaks++;
+    };
+
+    void add_long_break()
+    {
+        this->long_breaks++;
+    };
+
+    size_t get_short_breaks()
+    {
+        return this->short_breaks;
+    };
+
+    size_t get_long_breaks()
+    {
+        return this->long_breaks;
+    };
+
+    size_t get_short_breaks_left()
+    {
+        return Pomodoro::LONG_BREAK_AFTER - this->short_breaks;
+    };
 };
 
 size_t Pomodoro::short_breaks = 0;
@@ -105,6 +132,7 @@ int64_t Pomodoro::counting_started_at = 0;
 constexpr int64_t Pomodoro::WORK_PERIOD_SECONDS;
 constexpr int64_t Pomodoro::SHORT_BREAK_PERIOD_SECONDS;
 constexpr int64_t Pomodoro::LONG_BREAK_PERIOD_SECONDS;
+constexpr int64_t Pomodoro::LONG_BREAK_AFTER;
 
 // ----------------------------------------------------------------------------
 // 3. State Declarations
