@@ -162,6 +162,11 @@ public:
         ESP_LOGI(TAG, "pomodoro timer reset");
     };
 
+    void reset_short_breaks()
+    {
+        this->short_breaks = 0;
+    };
+
     int64_t get_counting_seconds()
     {
         if (this->pause_started_at > 0)
@@ -360,6 +365,7 @@ struct LongBreak : Pomodoro
     void entry() override
     {
         this->reset_counting();
+        this->reset_short_breaks();
         this->add_long_break();
         ESP_LOGI(TAG, "long break, amount taken: %" PRIu32 "", this->get_long_breaks());
     };
