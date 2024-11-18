@@ -111,12 +111,18 @@ protected:
     size_t short_breaks;
     size_t long_breaks;
     int64_t counting_started_at;
+    int64_t pause_started_at;
     bool timer_active;
 
 public:
     bool is_timer_active()
     {
         return this->timer_active;
+    };
+
+    bool is_paused()
+    {
+        return this->pause_started_at > 0;
     };
 
     void add_short_break()
