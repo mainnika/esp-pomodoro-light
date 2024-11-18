@@ -38,6 +38,8 @@ static const char *TAG = "pomodoro";
 #define GPIO_LIGHT_YELLOW GPIO_NUM_12
 #define GPIO_LIGHT_RED GPIO_NUM_14
 
+// #define LONG_BREAK_ENABLE 1
+
 esp_err_t wifi_connect(void);
 
 extern "C"
@@ -292,12 +294,14 @@ struct Work : Pomodoro
             return;
         }
 
+#ifdef LONG_BREAK_ENABLE
         bool is_last_work = this->get_short_breaks_left() == 0;
         if (is_last_work)
         {
             transit<LongBreak>();
         }
         else
+#endif
         {
             transit<ShortBreak>();
         }
@@ -554,15 +558,20 @@ static void led_visualize(int64_t time_since_boot)
         IDLE,
         WORK,
         SHORT_BREAK,
+#ifdef LONG_BREAK_ENABLE
         LONG_BREAK,
         LONG_BREAK_LAST_MINUTES,
+#endif
     };
     led_state state = OFF;
     state = fsm_handle::is_in_state<Idle>() ? IDLE : state;
     state = fsm_handle::is_in_state<Work>() ? WORK : state;
     state = fsm_handle::is_in_state<ShortBreak>() ? SHORT_BREAK : state;
+
+#ifdef LONG_BREAK_ENABLE
     state = fsm_handle::is_in_state<LongBreak>() ? LONG_BREAK : state;
     state = fsm_handle::is_in_state<LongBreakLastMinutes>() ? LONG_BREAK_LAST_MINUTES : state;
+#endif
 
     bool is_paused = Pomodoro::current_state_ptr->is_paused();
     bool is_started = Pomodoro::current_state_ptr->is_started();
@@ -606,6 +615,7 @@ static void led_visualize(int64_t time_since_boot)
         return;
 
     case SHORT_BREAK:
+#ifdef LONG_BREAK_ENABLE
         if (!is_started)
         {
             gpio_set_level(GPIO_LIGHT_RED, led_off);
@@ -618,6 +628,7 @@ static void led_visualize(int64_t time_since_boot)
         gpio_set_level(GPIO_LIGHT_GREEN, led_off);
         return;
     case LONG_BREAK:
+#endif
         if (!is_started)
         {
             gpio_set_level(GPIO_LIGHT_RED, led_off);
@@ -629,6 +640,7 @@ static void led_visualize(int64_t time_since_boot)
         gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
         gpio_set_level(GPIO_LIGHT_GREEN, led_off);
         return;
+#ifdef LONG_BREAK_ENABLE
     case LONG_BREAK_LAST_MINUTES:
         if (!is_started)
         {
@@ -641,6 +653,7 @@ static void led_visualize(int64_t time_since_boot)
         gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
         gpio_set_level(GPIO_LIGHT_GREEN, led_off);
         return;
+#endif
     }
 }
 
