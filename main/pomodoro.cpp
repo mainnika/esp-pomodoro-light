@@ -108,9 +108,9 @@ struct Pomodoro : tinyfsm::Fsm<Pomodoro>
     void exit(void) {}; /* no exit actions */
 
 protected:
-    static size_t short_breaks;
-    static size_t long_breaks;
-    static int64_t counting_started_at;
+    size_t short_breaks;
+    size_t long_breaks;
+    int64_t counting_started_at;
     bool timer_active;
 
 public:
@@ -145,9 +145,6 @@ public:
     };
 };
 
-size_t Pomodoro::short_breaks = 0;
-size_t Pomodoro::long_breaks = 0;
-int64_t Pomodoro::counting_started_at = 0;
 constexpr int64_t Pomodoro::WORK_PERIOD_SECONDS;
 constexpr int64_t Pomodoro::SHORT_BREAK_PERIOD_SECONDS;
 constexpr int64_t Pomodoro::LONG_BREAK_PERIOD_SECONDS;
@@ -208,7 +205,8 @@ struct Work : Pomodoro
             return;
         }
 
-        if (Pomodoro::short_breaks == 4)
+        bool is_last_work = this->get_short_breaks_left() == 0;
+        if (is_last_work)
         {
             transit<LongBreak>();
         }
@@ -224,8 +222,8 @@ struct ShortBreak : Pomodoro
     void entry() override
     {
         Pomodoro::entry();
-        Pomodoro::short_breaks++;
-        ESP_LOGI(TAG, "short break %d", Pomodoro::short_breaks);
+        this->add_short_break();
+        ESP_LOGI(TAG, "short break %d", this->short_breaks);
     };
     void react(ResetTimer const &) override { transit<Idle>(); };
 
@@ -252,7 +250,7 @@ struct LongBreak : Pomodoro
     void entry() override
     {
         Pomodoro::entry();
-        Pomodoro::short_breaks = 0;
+        this->add_long_break();
         ESP_LOGI(TAG, "long break");
     };
     void react(ResetTimer const &) override { transit<Idle>(); };
