@@ -328,7 +328,6 @@ static void led_visualize(int64_t time_since_boot)
         LONG_BREAK
     };
     led_state state = OFF;
-    state = fsm_handle::is_in_state<Off>() ? OFF : state;
     state = fsm_handle::is_in_state<Idle>() ? IDLE : state;
     state = fsm_handle::is_in_state<Work>() ? WORK : state;
     state = fsm_handle::is_in_state<ShortBreak>() ? SHORT_BREAK : state;
