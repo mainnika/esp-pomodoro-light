@@ -32,6 +32,12 @@ static const char *TAG = "pomodoro";
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
+#define GPIO_ACTION_BUTTON GPIO_NUM_2
+
+#define GPIO_LIGHT_GREEN GPIO_NUM_13
+#define GPIO_LIGHT_YELLOW GPIO_NUM_12
+#define GPIO_LIGHT_RED GPIO_NUM_14
+
 esp_err_t wifi_connect(void);
 
 extern "C"
@@ -315,20 +321,20 @@ static esp_err_t gpio_setup()
 
     io_conf.intr_type = GPIO_INTR_POSEDGE;
     io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1 << GPIO_NUM_2);
+    io_conf.pin_bit_mask = (1 << GPIO_ACTION_BUTTON);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_conf);
 
     io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = (1 << GPIO_NUM_14) | (1 << GPIO_NUM_12) | (1 << GPIO_NUM_13);
+    io_conf.pin_bit_mask = (1 << GPIO_LIGHT_RED) | (1 << GPIO_LIGHT_YELLOW) | (1 << GPIO_NUM_13);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_conf);
 
     // change gpio intrrupt type for one pin
-    gpio_set_intr_type(GPIO_NUM_2, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(GPIO_ACTION_BUTTON, GPIO_INTR_ANYEDGE);
 
     // create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
@@ -338,7 +344,7 @@ static esp_err_t gpio_setup()
     // install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     // hook isr handler for specific gpio pin
-    gpio_isr_handler_add(GPIO_NUM_2, gpio_isr_handler, (void *)(GPIO_NUM_2));
+    gpio_isr_handler_add(GPIO_ACTION_BUTTON, gpio_isr_handler, (void *)(GPIO_ACTION_BUTTON));
 
     return ESP_OK;
 }
@@ -359,7 +365,7 @@ static void gpio_handle_evt_from_isr(void *arg)
             ESP_LOGI(TAG, "GPIO[%" PRIu32 "] evt received", gpio_num);
             switch (gpio_num)
             {
-            case GPIO_NUM_2:
+            case GPIO_ACTION_BUTTON:
                 fsm_handle::dispatch(reset_timer_event);
                 break;
             default:
@@ -395,28 +401,28 @@ static void led_visualize(int64_t time_since_boot)
     {
     case OFF:
         gpio_set_level(GPIO_NUM_13, led_off);
-        gpio_set_level(GPIO_NUM_12, led_blink);
-        gpio_set_level(GPIO_NUM_14, led_off);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_blink);
+        gpio_set_level(GPIO_LIGHT_RED, led_off);
         break;
     case IDLE:
         gpio_set_level(GPIO_NUM_13, led_blink);
-        gpio_set_level(GPIO_NUM_12, led_off);
-        gpio_set_level(GPIO_NUM_14, led_off);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_RED, led_off);
         break;
     case WORK:
         gpio_set_level(GPIO_NUM_13, led_on);
-        gpio_set_level(GPIO_NUM_12, led_off);
-        gpio_set_level(GPIO_NUM_14, led_off);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_RED, led_off);
         break;
     case SHORT_BREAK:
         gpio_set_level(GPIO_NUM_13, led_off);
-        gpio_set_level(GPIO_NUM_12, led_blink);
-        gpio_set_level(GPIO_NUM_14, led_on);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_blink);
+        gpio_set_level(GPIO_LIGHT_RED, led_on);
         break;
     case LONG_BREAK:
         gpio_set_level(GPIO_NUM_13, led_off);
-        gpio_set_level(GPIO_NUM_12, led_off);
-        gpio_set_level(GPIO_NUM_14, led_on);
+        gpio_set_level(GPIO_LIGHT_YELLOW, led_off);
+        gpio_set_level(GPIO_LIGHT_RED, led_on);
         break;
     }
 }
